@@ -1,6 +1,6 @@
 import streamlit as st
-from PyPDF2 import PdfReader
-import pyttsx3
+import pdfplumber
+from gtts import gTTS
 
 # Title of the Streamlit app
 st.title("PDF Reader and Audio Generator")
@@ -9,28 +9,21 @@ st.title("PDF Reader and Audio Generator")
 uploaded_file = st.file_uploader("Upload your PDF file", type="pdf")
 
 if uploaded_file is not None:
-    # Read the uploaded PDF file
-    pdf_reader = PdfReader(uploaded_file)
-    text_data = ""
-
-    # Extract text from each page of the PDF
-    for page in pdf_reader.pages:
-        text_data += page.extract_text()
+    # Use pdfplumber to extract text
+    with pdfplumber.open(uploaded_file) as pdf:
+        text_data = ""
+        for page in pdf.pages:
+            text_data += page.extract_text()
 
     # Display extracted text in the Streamlit app
     st.write("Extracted Text:")
     st.text_area("PDF Content", text_data, height=300)
 
-    # Text-to-speech conversion using pyttsx3
-    speaker = pyttsx3.init()
-    speaker.say(text_data)
-    speaker.runAndWait()
-    
-    # Save audio to a file
+    # Text-to-speech conversion using gTTS
+    tts = gTTS(text=text_data, lang='en')
     audio_file_name = "output_audio.mp3"
-    speaker.save_to_file(text_data, audio_file_name)
-    speaker.runAndWait()
-    
+    tts.save(audio_file_name)
+
     # Provide download link for the audio file
     with open(audio_file_name, "rb") as audio_file:
         st.download_button(
