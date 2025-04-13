@@ -4,5 +4,4 @@ PyPDF2
 ebooklib 
 mobi 
 pydub
-eSpeak
-eSpeak-ng
+
