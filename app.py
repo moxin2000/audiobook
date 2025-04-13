@@ -1,35 +1,33 @@
 import streamlit as st
-import pyttsx3
 import PyPDF2
 import ebooklib
 from ebooklib import epub
-import mobi
 import os
 import tempfile
 import time
+from gtts import gTTS
+import base64
+from io import BytesIO
 from pydub import AudioSegment
 from pydub.playback import play
 import threading
-
-# Initialize text-to-speech engine
-engine = pyttsx3.init()
 
 # Set up the app layout
 st.set_page_config(layout="wide")
 st.title("Audiobook Reader")
 
-# Available voices (adjust based on your system's available voices)
-VOICES = {
-    "David (English)": "english-m",
-    "Zira (English)": "english-f",
-    "Microsoft David": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-US_DAVID_11.0",
-    "Microsoft Zira": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-US_ZIRA_11.0",
-    "Google US English": "com.apple.speech.synthesis.voice.Alex",
-    "Google UK English": "com.apple.speech.synthesis.voice.Daniel",
-    "Samantha (Premium)": "com.apple.speech.synthesis.voice.samantha.premium",
-    "Moira (Irish)": "com.apple.speech.synthesis.voice.moira",
-    "Tessa (South African)": "com.apple.speech.synthesis.voice.tessa",
-    "Serena (Australian)": "com.apple.speech.synthesis.voice.serena"
+# Available languages and voices
+LANGUAGES = {
+    'English': 'en',
+    'Spanish': 'es',
+    'French': 'fr',
+    'German': 'de',
+    'Italian': 'it',
+    'Portuguese': 'pt',
+    'Dutch': 'nl',
+    'Hindi': 'hi',
+    'Chinese': 'zh',
+    'Japanese': 'ja'
 }
 
 # State management
@@ -41,6 +39,8 @@ if 'text_content' not in st.session_state:
     st.session_state.text_content = ""
 if 'audio_file' not in st.session_state:
     st.session_state.audio_file = None
+if 'audio_bytes' not in st.session_state:
+    st.session_state.audio_bytes = None
 
 # Function to extract text from different file types
 def extract_text(uploaded_file):
@@ -63,10 +63,6 @@ def extract_text(uploaded_file):
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
                     text += item.get_content().decode('utf-8')
         
-        elif file_ext == 'mobi':
-            with mobi.open(tmp_file_path) as mobi_file:
-                text = mobi_file.read()
-        
         elif file_ext == 'txt':
             with open(tmp_file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -78,34 +74,35 @@ def extract_text(uploaded_file):
     
     return text
 
-# Function to convert text to speech
-def text_to_speech(text, voice, speed):
-    engine = pyttsx3.init()
-    
+# Function to convert text to speech using gTTS
+def text_to_speech(text, lang, speed):
     try:
-        # Set voice
-        if voice in VOICES.values():
-            engine.setProperty('voice', voice)
-        else:
-            st.warning("Selected voice not found. Using default voice.")
+        tts = gTTS(text=text, lang=lang, slow=False)
         
-        # Set speed
-        engine.setProperty('rate', 150 + (speed * 50))  # Base 150, adjust by speed
+        # Adjust speed by modifying the audio
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
         
-        # Save to temporary file
-        temp_file = "temp_audio.wav"
-        engine.save_to_file(text, temp_file)
-        engine.runAndWait()
+        # Load audio and adjust speed
+        audio = AudioSegment.from_file(audio_bytes, format="mp3")
+        audio = audio.speedup(playback_speed=1.0 + (speed * 0.5))  # Speed adjustment
         
-        return temp_file
+        # Save to bytes
+        output_bytes = BytesIO()
+        audio.export(output_bytes, format="mp3")
+        output_bytes.seek(0)
+        
+        return output_bytes
     except Exception as e:
         st.error(f"Error in text-to-speech: {str(e)}")
         return None
 
 # Function to play audio
 def play_audio():
-    if st.session_state.audio_file:
-        audio = AudioSegment.from_wav(st.session_state.audio_file)
+    if st.session_state.audio_bytes:
+        st.session_state.audio_bytes.seek(0)
+        audio = AudioSegment.from_file(st.session_state.audio_bytes, format="mp3")
         play(audio)
 
 # Function to handle playback in a separate thread
@@ -117,7 +114,7 @@ def playback_control():
 # Sidebar for file upload
 with st.sidebar:
     st.header("Upload Your Book")
-    uploaded_file = st.file_uploader("Choose a file", type=['pdf', 'epub', 'mobi', 'txt'])
+    uploaded_file = st.file_uploader("Choose a file", type=['pdf', 'epub', 'txt'])
     
     if uploaded_file:
         st.session_state.text_content = extract_text(uploaded_file)
@@ -129,7 +126,7 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.header("Book Content")
     if st.session_state.text_content:
-        st.text_area("Text", st.session_state.text_content, height=500)
+        st.text_area("Text", st.session_state.text_content, height=500, key="text_display")
     else:
         st.info("Upload a book file to see its content here")
 
@@ -137,8 +134,8 @@ with col2:
     st.header("Playback Controls")
     
     if st.session_state.text_content:
-        # Voice selection
-        selected_voice = st.selectbox("Select Voice", list(VOICES.keys()))
+        # Language selection
+        selected_lang = st.selectbox("Select Language", list(LANGUAGES.keys()))
         
         # Speed control
         speed = st.slider("Reading Speed", 0.0, 2.0, 1.0, 0.1)
@@ -149,12 +146,13 @@ with col2:
         with col_play:
             if st.button("▶️ Play"):
                 st.session_state.playing = True
-                st.session_state.audio_file = text_to_speech(
+                st.session_state.audio_bytes = text_to_speech(
                     st.session_state.text_content, 
-                    VOICES[selected_voice], 
+                    LANGUAGES[selected_lang], 
                     speed
                 )
-                threading.Thread(target=playback_control).start()
+                if st.session_state.audio_bytes:
+                    threading.Thread(target=playback_control).start()
         
         with col_pause:
             if st.button("⏸ Pause"):
@@ -176,14 +174,24 @@ with col2:
             st.success("Playing...")
         else:
             st.info("Ready to play")
+            
+        # Audio download option
+        if st.session_state.audio_bytes:
+            st.download_button(
+                label="Download Audio",
+                data=st.session_state.audio_bytes,
+                file_name="audiobook.mp3",
+                mime="audio/mpeg"
+            )
     else:
         st.warning("Upload a book file to enable playback controls")
 
 # Additional instructions
 st.markdown("""
 ### How to Use:
-1. Upload your book (PDF, EPUB, MOBI, or TXT) using the sidebar
+1. Upload your book (PDF, EPUB, or TXT) using the sidebar
 2. View the extracted text content
-3. Select a voice and adjust the reading speed
+3. Select a language and adjust the reading speed
 4. Use the playback controls to listen to your book
+5. Download the audio if you want to save it
 """)
