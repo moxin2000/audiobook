@@ -1,15 +1,41 @@
-import PyPDF2
+import streamlit as st
+from PyPDF2 import PdfReader
 import pyttsx3
 
-speaker = pyttsx3.init()Code language: Python (python)
+# Title of the Streamlit app
+st.title("PDF Reader and Audio Generator")
 
-pdfReader = PyPDF2.PdfFileReader(open('file.pdf', 'rb'))Code language: Python (python)
+# File uploader widget
+uploaded_file = st.file_uploader("Upload your PDF file", type="pdf")
 
-for page_num in range(pdfReader.numPages):
- text =  pdfReader.getPage(page_num).extractText()
- speaker.say(text)
- speaker.runAndWait()
- speaker.stop()Code language: Python (python)
+if uploaded_file is not None:
+    # Read the uploaded PDF file
+    pdf_reader = PdfReader(uploaded_file)
+    text_data = ""
 
-engine.save_to_file(text, 'audio.mp3')
- engine.runAndWait()Code language: Python (python)
+    # Extract text from each page of the PDF
+    for page in pdf_reader.pages:
+        text_data += page.extract_text()
+
+    # Display extracted text in the Streamlit app
+    st.write("Extracted Text:")
+    st.text_area("PDF Content", text_data, height=300)
+
+    # Text-to-speech conversion using pyttsx3
+    speaker = pyttsx3.init()
+    speaker.say(text_data)
+    speaker.runAndWait()
+    
+    # Save audio to a file
+    audio_file_name = "output_audio.mp3"
+    speaker.save_to_file(text_data, audio_file_name)
+    speaker.runAndWait()
+    
+    # Provide download link for the audio file
+    with open(audio_file_name, "rb") as audio_file:
+        st.download_button(
+            label="Download Audio",
+            data=audio_file,
+            file_name=audio_file_name,
+            mime="audio/mpeg"
+        )
