@@ -1,0 +1,6 @@
+streamlit 
+pyttsx3 
+PyPDF2 
+ebooklib 
+mobi 
+pydub
