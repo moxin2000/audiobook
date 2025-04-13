@@ -5,3 +5,4 @@ ebooklib
 mobi 
 pydub
 gtts
+pdfplumber
